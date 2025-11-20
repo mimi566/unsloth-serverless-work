@@ -1,26 +1,9 @@
-# ────────────────────────────── Core RunPod & HF ──────────────────────────────
-runpod~=1.7.7
-pydantic
-pydantic-settings
-hf-transfer
-huggingface-hub
-
-# ────────────────────────────── PyTorch & CUDA ──────────────────────────────
 torch==2.4.0
 --extra-index-url https://download.pytorch.org/whl/cu121
 
-# ────────────────────────────── Quantization & Acceleration ─────────────────
+unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git
 bitsandbytes>=0.43.3
 accelerate
-
-# ────────────────────────────── Unsloth (MUST be this exact version) ───────
-unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git
-
-# ────────────────────────────── Transformers (Unsloth requires ≥4.57) ───────
 transformers>=4.45.0
-
-# ────────────────────────────── Optional but recommended ───────────────────
 sentencepiece
-protobuf
-packaging
-typing-extensions>=4.8.0
+runpod
