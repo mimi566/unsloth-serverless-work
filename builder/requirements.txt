@@ -1,14 +1,26 @@
-ray
-pandas
-pyarrow
+# ────────────────────────────── Core RunPod & HF ──────────────────────────────
 runpod~=1.7.7
-huggingface-hub
-packaging
-typing-extensions>=4.8.0
 pydantic
 pydantic-settings
 hf-transfer
-transformers>=4.57.0
-bitsandbytes>=0.45.0
-kernels
+huggingface-hub
+
+# ────────────────────────────── PyTorch & CUDA ──────────────────────────────
 torch==2.6.0
+--extra-index-url https://download.pytorch.org/whl/cu124
+
+# ────────────────────────────── Quantization & Acceleration ─────────────────
+bitsandbytes>=0.45.0
+accelerate>=1.0.0
+
+# ────────────────────────────── Unsloth (MUST be this exact version) ───────
+unsloth[cu124-torch260] @ git+https://github.com/unslothai/unsloth.git
+
+# ────────────────────────────── Transformers (Unsloth requires ≥4.57) ───────
+transformers>=4.57.0
+
+# ────────────────────────────── Optional but recommended ───────────────────
+sentencepiece
+protobuf
+packaging
+typing-extensions>=4.8.0
