@@ -2,7 +2,7 @@
 # Official RunPod PyTorch base (CUDA 12.4 + torch 2.6.0 pre-installed)
 # This is the FASTEST & MOST RELIABLE base as of Nov 2025
 # ─────────────────────────────────────────────────────────────
-FROM runpod/pytorch:2.6.0-py3.12-cuda12.4.1-devel-ubuntu22.04
+FROM runpod/pytorch:2.4.0-py3.10-cuda12.1.1-devel-ubuntu22.04
 
 # Set working directory
 WORKDIR /

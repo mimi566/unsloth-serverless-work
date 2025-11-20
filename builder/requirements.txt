@@ -6,18 +6,18 @@ hf-transfer
 huggingface-hub
 
 # ────────────────────────────── PyTorch & CUDA ──────────────────────────────
-torch==2.6.0
---extra-index-url https://download.pytorch.org/whl/cu124
+torch==2.4.0
+--extra-index-url https://download.pytorch.org/whl/cu121
 
 # ────────────────────────────── Quantization & Acceleration ─────────────────
-bitsandbytes>=0.45.0
-accelerate>=1.0.0
+bitsandbytes>=0.43.3
+accelerate
 
 # ────────────────────────────── Unsloth (MUST be this exact version) ───────
-unsloth[cu124-torch260] @ git+https://github.com/unslothai/unsloth.git
+unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git
 
 # ────────────────────────────── Transformers (Unsloth requires ≥4.57) ───────
-transformers>=4.57.0
+transformers>=4.45.0
 
 # ────────────────────────────── Optional but recommended ───────────────────
 sentencepiece
