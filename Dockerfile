@@ -6,21 +6,23 @@ WORKDIR /
 # Install git (required for pip git installs)
 RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
 
-# Force reinstall PyTorch 2.8.0 + cu126 wheels (required for Unsloth 4-bit)
-RUN pip install --upgrade pip && \
-    pip install --no-cache-dir --force-reinstall \
-        torch==2.8.0+cu126 \
-        torchvision==0.19.0+cu126 \
-        torchaudio==2.8.0+cu126 \
-        -f https://download.pytorch.org/whl/torch_stable.html
+# Upgrade pip & setuptools
+RUN pip install --upgrade pip setuptools wheel
 
-# Copy and install Unsloth and dependencies
+# Install PyTorch 2.8.1 + cu126 (compatible with Unsloth 4-bit)
+RUN pip install --no-cache-dir --force-reinstall \
+    torch==2.8.1+cu126 \
+    torchvision==0.19.1+cu126 \
+    torchaudio==2.8.1+cu126 \
+    --extra-index-url https://download.pytorch.org/whl/cu126
+
+# Copy and install Unsloth + dependencies
 COPY builder/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt \
-    -f https://download.pytorch.org/whl/torch_stable.html && \
+    --extra-index-url https://download.pytorch.org/whl/cu126 && \
     rm -rf /root/.cache/pip
 
-# Enable fast kernels in Unsloth
+# Enable Unsloth fast kernels
 ENV UNSLOTH_FORCE_CUDA=1
 
 # Copy your source code
