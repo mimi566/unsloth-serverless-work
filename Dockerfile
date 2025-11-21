@@ -1,4 +1,4 @@
-# Stable RunPod base with CUDA 12.4 (exists 100% — confirmed on Docker Hub Nov 21, 2025)
+# Stable RunPod base with CUDA 12.4 + py3.11 (exists 100% — confirmed on Docker Hub Nov 21, 2025)
 FROM runpod/pytorch:2.4.0-py3.11-cuda12.4.1-devel-ubuntu22.04
 
 WORKDIR /
