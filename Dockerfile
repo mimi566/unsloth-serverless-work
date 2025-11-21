@@ -8,7 +8,7 @@ RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
 
 # Install PyTorch 2.8.0+cu124 (your Colab version — fixes Unsloth inductor.config error)
 RUN pip install --upgrade pip && \
-    pip install torch==2.8.0 torchvision==0.19.0 torchaudio==2.8.0 --index-url https://download.pytorch.org/whl/cu124
+    pip install torch==2.8.0 torchvision==0.19.0 torchaudio==2.8.0 --extra-index-url https://download.pytorch.org/whl/cu124
 
 # Copy requirements and install Unsloth + deps (uses the new PyTorch)
 COPY builder/requirements.txt .
