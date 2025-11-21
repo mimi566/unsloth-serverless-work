@@ -22,7 +22,7 @@ RUN pip install --no-cache-dir --force-reinstall \
 
 # Copy and install Unsloth + dependencies
 COPY builder/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt && \
+RUN pip install --no-cache-dir -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cu124 && \
     rm -rf /root/.cache/pip
 
 # Enable Unsloth fast kernels
