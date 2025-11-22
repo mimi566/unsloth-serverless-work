@@ -68,8 +68,15 @@ def load_model():
 # Parse input like vLLM's JobInput
 def get_input_params(job_input: Dict[str, Any]):
     messages = job_input.get("messages", [])
+    
+    # Support raw "prompt" input for convenience
     if not messages:
-        raise ValueError("No messages provided")
+        prompt = job_input.get("prompt")
+        if prompt:
+            messages = [{"role": "user", "content": prompt}]
+
+    if not messages:
+        raise ValueError("No messages provided. Please send 'messages' (list) or 'prompt' (string) in your input.")
 
     max_tokens = job_input.get("max_tokens", 2400)
     temperature = job_input.get("temperature", 1.25)
