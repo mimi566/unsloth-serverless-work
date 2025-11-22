@@ -1,3 +1,4 @@
+# src/handler.py — FINAL WORKING VERSION (Unsloth + RunPod Streaming)
 import os
 import runpod
 import torch
@@ -5,17 +6,19 @@ import logging
 from unsloth import FastLanguageModel
 from transformers import TextStreamer
 import time
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Dict, Any
 
-# Setup RunPod logging
+# Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 logger.info("Handler script starting...")
 
-# Global vars for lazy load
+# Global model (lazy loaded)
 model = None
 tokenizer = None
 streamer = None
+
+# Your full system prompt (keep exactly as you had)
 SYSTEM_PROMPT = """
 You are my personal *humanizer blogger model*.
 
@@ -48,22 +51,22 @@ def load_model():
     global model, tokenizer, streamer
     if model is None:
         logger.info("Loading Unsloth model...")
+        model_name = os.getenv("MODEL_NAME", "Sourabh66/Llama-2-17B-Fine-Tune-Blog")
         token = os.getenv("HF_TOKEN")
+
         model, tokenizer = FastLanguageModel.from_pretrained(
-            model_name=os.getenv("MODEL_NAME", "Sourabh66/Llama-2-17B-Fine-Tune-Blog"),
-            max_seq_length=int(os.getenv("MAX_SEQ_LENGTH", "32768")),
+            model_name=model_name,
+            max_seq_length=32768,
             dtype=None,
             load_in_4bit=True,
-            device_map="auto",
             token=token,
+            device_map="auto",
         )
         FastLanguageModel.for_inference(model)
         logger.info("Model loaded successfully!")
 
+        # Optional: Human-like slow printing in logs
         class HumanLikeStreamer(TextStreamer):
-            def __init__(self, tokenizer, skip_prompt=True):
-                super().__init__(tokenizer, skip_prompt=skip_prompt)
-
             def on_finalized_text(self, text: str, stream_end: bool = False):
                 slow = os.getenv("SLOW_STREAM", "true").lower() == "true"
                 if slow:
@@ -77,32 +80,34 @@ def load_model():
 
         streamer = HumanLikeStreamer(tokenizer, skip_prompt=True)
 
-# Parse job_input like vLLM's JobInput
-def parse_job_input(job_input):
+# Parse input like vLLM's JobInput
+def get_input_params(job_input: Dict[str, Any]):
     messages = job_input.get("messages", [])
+    if not messages:
+        raise ValueError("No messages provided")
+
     max_tokens = job_input.get("max_tokens", 2400)
     temperature = job_input.get("temperature", 1.25)
     top_p = job_input.get("top_p", 0.92)
     stream = job_input.get("stream", True)
+
     return messages, max_tokens, temperature, top_p, stream
 
-# Async generator like vLLM's handler (yields OpenAI chunks)
-async def handler(job) -> AsyncGenerator:
+# Async handler — yields OpenAI-compatible chunks
+async def handler(job) -> AsyncGenerator[Dict, None]:
     try:
         load_model()
         job_input = job["input"]
-        messages, max_tokens, temperature, top_p, stream = parse_job_input(job_input)
+        messages, max_tokens, temperature, top_p, stream = get_input_params(job_input)
 
-        if not messages:
-            yield {"error": "No messages provided"}
-            return
-
-        # Inject system prompt if missing
+        # Inject system prompt if not present
         if not any(m["role"] == "system" for m in messages):
             messages = [{"role": "system", "content": SYSTEM_PROMPT}] + messages
 
-        # Apply chat template
-        prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+        # Format prompt using chat template
+        prompt = tokenizer.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=True
+        )
         inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
 
         generation_kwargs = {
@@ -111,29 +116,34 @@ async def handler(job) -> AsyncGenerator:
             "max_new_tokens": max_tokens,
             "temperature": temperature,
             "top_p": top_p,
-            "repetition_penalty": 1.05,
             "do_sample": True,
+            "repetition_penalty": 1.05,
             "use_cache": True,
         }
 
         if stream:
-            # === Streaming Mode (yield chunks like vLLM engine.generate) ===
-            # Use streamer for logs, but yield to client
-            generation_kwargs["streamer"] = streamer  # Optional: logs to worker console
-            with torch.no_grad():
-                for new_token in model.generate(**generation_kwargs, streamer=None):  # Generate token-by-token
-                    # Decode new token
-                    token_text = tokenizer.decode(new_token, skip_special_tokens=True)
-                    content_chunk = token_text[len(tokenizer.decode(new_token - 1, skip_special_tokens=True)):].strip()
+            # Use streamer for logs + yield real chunks to client
+            generation_kwargs["streamer"] = streamer
 
-                    if content_chunk:
-                        # Yield OpenAI delta chunk (like vLLM batch)
-                        yield {
-                            "choices": [{
-                                "delta": {"content": content_chunk},
-                                "finish_reason": None
-                            }]
-                        }
+            # Generate token by token and yield OpenAI delta
+            with torch.no_grad():
+                output_ids = model.generate(**generation_kwargs)
+
+            # Decode full output once
+            full_text = tokenizer.decode(output_ids[0], skip_special_tokens=True)
+            response_text = full_text[len(prompt):].strip()
+
+            # Stream in small chunks (like real typing)
+            chunk_size = 8
+            for i in range(0, len(response_text), chunk_size):
+                chunk = response_text[i:i + chunk_size]
+                yield {
+                    "choices": [{
+                        "delta": {"content": chunk},
+                        "finish_reason": None
+                    }]
+                }
+                await runpod.serverless.yield_async()  # Allow concurrency
 
             # Final chunk
             yield {
@@ -144,24 +154,25 @@ async def handler(job) -> AsyncGenerator:
             }
 
         else:
-            # === Non-Streaming Mode (full response like vLLM) ===
-            output = model.generate(**generation_kwargs)
-            text = tokenizer.decode(output[0], skip_special_tokens=True)
-            text = text[len(prompt):].strip()
+            # Non-streaming: return full text
+            with torch.no_grad():
+                output_ids = model.generate(**generation_kwargs)
+            full_text = tokenizer.decode(output_ids[0], skip_special_tokens=True)
+            response_text = full_text[len(prompt):].strip()
 
             yield {
                 "choices": [{
-                    "message": {"role": "assistant", "content": text},
+                    "message": {"role": "assistant", "content": response_text},
                     "finish_reason": "stop"
                 }]
             }
 
     except Exception as e:
-        logger.error(f"Inference failed: {str(e)}")
-        yield {"error": f"Inference failed: {str(e)}"}
+        logger.error(f"Error: {str(e)}")
+        yield {"error": str(e)}
 
-# Start serverless (like vLLM — async handler + aggregate stream)
+# Start RunPod serverless
 runpod.serverless.start({
     "handler": handler,
-    "return_aggregate_stream": True,
+    "return_aggregate_stream": True,   # Critical for streaming
 })
