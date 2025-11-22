@@ -4,9 +4,10 @@ import runpod
 import torch
 import logging
 from unsloth import FastLanguageModel
-from transformers import TextStreamer
+from transformers import TextStreamer, TextIteratorStreamer
+from threading import Thread
 import time
-from typing import AsyncGenerator, Dict, Any
+from typing import Generator, Dict, Any
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -16,7 +17,6 @@ logger.info("Handler script starting...")
 # Global model (lazy loaded)
 model = None
 tokenizer = None
-streamer = None
 
 # Your full system prompt (keep exactly as you had)
 SYSTEM_PROMPT = """
@@ -48,7 +48,7 @@ RULES:
 """.strip()
 
 def load_model():
-    global model, tokenizer, streamer
+    global model, tokenizer
     if model is None:
         logger.info("Loading Unsloth model...")
         model_name = os.getenv("MODEL_NAME", "Sourabh66/Llama-2-17B-Fine-Tune-Blog")
@@ -65,21 +65,6 @@ def load_model():
         FastLanguageModel.for_inference(model)
         logger.info("Model loaded successfully!")
 
-        # Optional: Human-like slow printing in logs
-        class HumanLikeStreamer(TextStreamer):
-            def on_finalized_text(self, text: str, stream_end: bool = False):
-                slow = os.getenv("SLOW_STREAM", "true").lower() == "true"
-                if slow:
-                    for char in text:
-                        print(char, end="", flush=True)
-                        time.sleep(0.028)
-                else:
-                    print(text, end="", flush=True)
-                if stream_end:
-                    print(flush=True)
-
-        streamer = HumanLikeStreamer(tokenizer, skip_prompt=True)
-
 # Parse input like vLLM's JobInput
 def get_input_params(job_input: Dict[str, Any]):
     messages = job_input.get("messages", [])
@@ -93,8 +78,8 @@ def get_input_params(job_input: Dict[str, Any]):
 
     return messages, max_tokens, temperature, top_p, stream
 
-# Async handler — yields OpenAI-compatible chunks
-async def handler(job) -> AsyncGenerator[Dict, None]:
+# Sync handler — yields OpenAI-compatible chunks
+def handler(job) -> Generator[Dict, None, None]:
     try:
         load_model()
         job_input = job["input"]
@@ -122,28 +107,25 @@ async def handler(job) -> AsyncGenerator[Dict, None]:
         }
 
         if stream:
-            # Use streamer for logs + yield real chunks to client
+            # Use TextIteratorStreamer for real-time streaming
+            streamer = TextIteratorStreamer(tokenizer, skip_prompt=True, skip_special_tokens=True)
             generation_kwargs["streamer"] = streamer
 
-            # Generate token by token and yield OpenAI delta
-            with torch.no_grad():
-                output_ids = model.generate(**generation_kwargs)
+            # Run generation in a separate thread so we can yield chunks
+            thread = Thread(target=model.generate, kwargs=generation_kwargs)
+            thread.start()
 
-            # Decode full output once
-            full_text = tokenizer.decode(output_ids[0], skip_special_tokens=True)
-            response_text = full_text[len(prompt):].strip()
-
-            # Stream in small chunks (like real typing)
-            chunk_size = 8
-            for i in range(0, len(response_text), chunk_size):
-                chunk = response_text[i:i + chunk_size]
+            # Yield tokens as they are generated
+            for new_text in streamer:
                 yield {
                     "choices": [{
-                        "delta": {"content": chunk},
+                        "delta": {"content": new_text},
                         "finish_reason": None
                     }]
                 }
-                await runpod.serverless.yield_async()  # Allow concurrency
+            
+            # Wait for thread to finish (should be done by now)
+            thread.join()
 
             # Final chunk
             yield {
@@ -174,5 +156,5 @@ async def handler(job) -> AsyncGenerator[Dict, None]:
 # Start RunPod serverless
 runpod.serverless.start({
     "handler": handler,
-    "return_aggregate_stream": True,   # Critical for streaming
+    "return_aggregate_stream": False,   # Must be False for real-time streaming
 })
